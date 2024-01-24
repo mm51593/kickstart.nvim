@@ -66,7 +66,7 @@ require('lazy').setup({
   },
 
   -- Useful plugin to show you pending keybinds.
-  { 'folke/which-key.nvim', opts = {} },
+  { 'folke/which-key.nvim',  opts = {} },
 
   {
     -- Theme inspired by Atom
@@ -147,6 +147,19 @@ require('lazy').setup({
   --    For additional information see: https://github.com/folke/lazy.nvim#-structuring-your-plugins
   -- { import = 'custom.plugins' },
   --
-  'jeffkreeftmeijer/vim-numbertoggle'
+  'jeffkreeftmeijer/vim-numbertoggle',
   -- try rustaceanvim
+
+  'nvim-tree/nvim-web-devicons',
+  {
+    "nvim-tree/nvim-tree.lua",
+    version = "*",
+    lazy = false,
+    dependencies = {
+      "nvim-tree/nvim-web-devicons",
+    },
+    config = function()
+      require("nvim-tree").setup {}
+    end,
+  },
 }, {})
