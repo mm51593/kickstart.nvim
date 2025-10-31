@@ -45,7 +45,7 @@ vim.api.nvim_create_autocmd('LspAttach', {
       group = vim.api.nvim_create_augroup('kickstart-lsp-detach', { clear = true }),
       callback = function(event2)
         vim.lsp.buf.clear_references()
-        vim.api.nvim_clear_autocmds { group = 'kickstart-lsp-highlight', buffer = event2.buf }
+        vim.api.nvim_clear_autocmds { group = 'kickstart-lsp-detach', buffer = event2.buf }
       end,
     })
   end
@@ -91,15 +91,6 @@ local servers = {
 }
 
 local cmp_nvim_lsp = require "cmp_nvim_lsp"
-
-require("lspconfig").clangd.setup {
-  on_attach = on_attach,
-  capabilities = cmp_nvim_lsp.default_capabilities(),
-  cmd = {
-    "clangd",
-    "--offset-encoding=utf-16",
-  },
-}
 
 -- Setup neovim lua configuration
 require('neodev').setup()
