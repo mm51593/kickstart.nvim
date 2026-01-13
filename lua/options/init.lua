@@ -56,3 +56,10 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   group = highlight_group,
   pattern = '*',
 })
+
+vim.diagnostic.config({
+  signs = {
+    priority = 10
+  },
+  virtual_text = true
+})
