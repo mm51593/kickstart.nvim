@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const RenderOffsetPair = struct { render: []const u8, offset: u64 };
+pub const RenderOffsetPair = struct { render: []const u8, offset: usize };
 
 pub const OpCode = enum {
     OP_RETURN,

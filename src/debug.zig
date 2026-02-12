@@ -5,14 +5,14 @@ const op_code = @import("op_code.zig");
 pub fn disasChunk(cnk: chunk.Chunk, name: []const u8) void {
     std.debug.print("== {s} ==\n", .{name});
 
-    var offset: u64 = 0;
+    var offset: usize = 0;
 
     while (offset < cnk.count) {
         offset += disasInst(cnk, offset);
     }
 }
 
-pub fn disasInst(cnk: chunk.Chunk, offset: u64) u64 {
+pub fn disasInst(cnk: chunk.Chunk, offset: usize) usize {
     std.debug.print("{:0>4} ", .{offset}); 
 
     const r_o_pair = cnk.code[offset].render();
