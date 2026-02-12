@@ -1,33 +1,33 @@
 const std = @import("std");
 const mem = @import("memory.zig");
-
-pub const OpCode = enum { OP_RETURN };
+const op_code = @import("op_code.zig");
 
 var gpa = std.heap.DebugAllocator(.{}){};
 const allocator = gpa.allocator();
 
-pub const Chunk = struct {
-    count: u64,
-    capacity: u64,
-    code: []OpCode,
+const INITIAL_CAPACITY = 8;
 
-    pub fn init() Chunk {
-        return Chunk{ .count = 0, .capacity = 0, .code = undefined };
+pub const Chunk = struct {
+    count: usize,
+    code: []op_code.OpCode,
+
+    pub fn init() !Chunk {
+        const block = try allocator.alloc(op_code.OpCode, INITIAL_CAPACITY);
+        return Chunk{ .count = 0, .code = block };
     }
 
-    pub fn write(self: *Chunk, byte: OpCode) !void {
-        if (self.capacity < self.count + 1) {
-            self.capacity = mem.growCapacity(self.capacity);
-            self.code = try mem.reallocateArray(OpCode, self.code, self.capacity, allocator);
+    pub fn write(self: *Chunk, byte: op_code.OpCode) !void {
+        if (self.code.len < self.count + 1) {
+            self.code.len = mem.growCapacity(self.code.len);
+            self.code = try mem.reallocateArray(op_code.OpCode, self.code, self.code.len, allocator);
         }
 
         self.code[self.count] = byte;
         self.count += 1;
     }
 
-    pub fn free(self: *Chunk) !void {
+    pub fn free(self: *Chunk) void {
         self.count = 0;
-        self.capacity = 0;
-        self.code = try mem.reallocateArray(OpCode, self.code, 0, allocator);
+        allocator.free(self.code);
     }
 };

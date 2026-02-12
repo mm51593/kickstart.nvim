@@ -1,10 +1,17 @@
 const std = @import("std");
 const chunk = @import("chunk.zig");
+const op_code = @import("op_code.zig");
+const debug = @import("debug.zig");
 
 pub fn main() !void {
-    var cnk = chunk.Chunk.init();
-    try cnk.write(chunk.OpCode.OP_RETURN);
-    try cnk.free();
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
+    var cnk = try chunk.Chunk.init();
+    try cnk.write(op_code.OpCode.OP_RETURN);
+    try cnk.write(op_code.OpCode.OP_RETURN);
+    try cnk.write(op_code.OpCode.OP_RETURN);
+    try cnk.write(op_code.OpCode.OP_RETURN);
+    
+    debug.disasChunk(cnk, "test chunk");
+
+    cnk.free();
 }
 
