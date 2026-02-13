@@ -29,9 +29,9 @@ pub const Chunk = struct {
         try self.lines.appendNTimes(alloc, line, @sizeOf(T)/@sizeOf(BYTE));
     }
 
-    pub fn addConstant(self: *Chunk, val: value.Value) !usize {
+    pub fn addConstant(self: *Chunk, val: value.Value) !BYTE {
         try self.constants.write(val);
-        return self.constants.values.items.len - 1;
+        return @intCast(self.constants.values.items.len - 1);
     }
 
     pub fn free(self: *Chunk) void {
