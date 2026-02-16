@@ -21,29 +21,27 @@ pub const Vm = struct {
     pub fn free(_: Vm) void {
     }
 
-    pub fn interpret(vm: *Vm, chunk: cnk.Chunk) InterpretResult {
-        vm.chunk = chunk;
-        vm.ip = vm.chunk.code.items.ptr;
-        return vm.run();
+    pub fn interpret(_: *Vm, _: []u8) InterpretResult {
+        return .INTERPRET_OK;
     }
 
     fn run(vm: *Vm) InterpretResult {
         while (true) {
             const instr: OpCode = @enumFromInt(readByte(vm));
             switch (instr) {
-                OpCode.OP_RETURN => {
+                .OP_RETURN => {
                     const val = vm.pop();
                     std.debug.print("Return: {}\n", .{val});
                     return InterpretResult.INTERPRET_OK;
                 },
-                OpCode.OP_NEGATE => {
+                .OP_NEGATE => {
                     const val = vm.pop();
                     vm.push(-val);
                 },
-                OpCode.OP_ADD, OpCode.OP_SUBTRACT, OpCode.OP_MULTIPLY, OpCode.OP_DIVIDE => {
+                .OP_ADD, OpCode.OP_SUBTRACT, OpCode.OP_MULTIPLY, OpCode.OP_DIVIDE => {
                     vm.interpretBinary(instr);
                 },
-                OpCode.OP_CONSTANT => {
+                .OP_CONSTANT => {
                     const val = readConstant(vm);
                     vm.push(val);
                 }
@@ -81,10 +79,10 @@ pub const Vm = struct {
         const b = vm.pop();
         const a = vm.pop();
         const res = switch (op) {
-            OpCode.OP_ADD => a + b,
-            OpCode.OP_SUBTRACT => a - b,
-            OpCode.OP_MULTIPLY => a * b,
-            OpCode.OP_DIVIDE => a / b,
+            .OP_ADD => a + b,
+            .OP_SUBTRACT => a - b,
+            .OP_MULTIPLY => a * b,
+            .OP_DIVIDE => a / b,
             else => unreachable
         };
         vm.push(res);
