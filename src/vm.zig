@@ -3,6 +3,7 @@ const cnk = @import("chunk.zig");
 const value = @import("value.zig");
 const BYTE = @import("op_code.zig").BYTE;
 const OpCode = @import("op_code.zig").OpCode;
+const Scanner = @import("scanner.zig").Scanner;
 
 const STACK_MAX = 256;
 
@@ -21,7 +22,23 @@ pub const Vm = struct {
     pub fn free(_: Vm) void {
     }
 
-    pub fn interpret(_: *Vm, _: []u8) InterpretResult {
+    pub fn interpret(_: *Vm, source: []u8) InterpretResult {
+        var scanner = Scanner.init(source);
+        var line: ?usize = null;
+        while (true) {
+            const token = scanner.scanToken();
+            if (token.line != line) {
+                std.debug.print("{d:0>4} ", .{line orelse 0});
+                line = token.line;
+            } else {
+                std.debug.print("   | ", .{});
+            }
+            std.debug.print("{s} {s}\n", .{@tagName(token.tokenType), token.lexeme});
+
+            if (token.tokenType == .EOF) {
+                break;
+            }
+        }
         return .INTERPRET_OK;
     }
 
