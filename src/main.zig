@@ -35,7 +35,7 @@ fn repl(v_m: *vm.Vm) !void {
     while (true) {
         std.debug.print("> ", .{});
         const input = try stdin.takeDelimiter('\n');
-        if (input) |line| {
+        if (input) |line| {            
             _ = interpret(v_m, line);
         } else {
             break;
@@ -44,7 +44,7 @@ fn repl(v_m: *vm.Vm) !void {
 }
 
 fn runFile(v_m: *vm.Vm, filename: []u8) !void {
-    const file = try std.fs.cwd().openFile(filename, .{.mode = .read_only});
+    const file = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
     defer file.close();
     const size = (try file.stat()).size;
 
