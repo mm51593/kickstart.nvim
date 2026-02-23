@@ -1,10 +1,16 @@
+const fmt = @import("std").fmt;
 var gpa = @import("std").heap.DebugAllocator(.{}){};
 const alloc = gpa.allocator();
 
 const INITIAL_CAPACITY = 8;
 const ArrayList = @import("std").ArrayList(Value);
 
-pub const Value = f64;
+pub const Value = union(enum) {
+    Bool: bool,
+    Nil,
+    Number: f64,
+};
+
 pub const ValueArray = struct {
     values: ArrayList,
 
@@ -21,3 +27,4 @@ pub const ValueArray = struct {
         self.values.deinit(alloc);
     }
 };
+

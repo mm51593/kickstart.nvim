@@ -1,18 +1,25 @@
 const std = @import("std");
 const Chunk = @import("chunk.zig").Chunk;
-const value = @import("value.zig");
+const Value = @import("value.zig").Value;
 const BYTE = @import("op_code.zig").BYTE;
 const OpCode = @import("op_code.zig").OpCode;
 const Scanner = @import("scanner.zig").Scanner;
 const Parser = @import("parser.zig").Parser;
+const ParseError = @import("parser.zig").ParseError;
 
 const STACK_MAX = 256;
+
+pub const RuntimeError = error{
+    InvalidOperandType,
+};
+
+pub const InterpretError = RuntimeError || ParseError;
 
 pub const Vm = struct {
     chunk: Chunk,
     ip: [*]u8,
-    stack: [STACK_MAX]value.Value,
-    sp: [*]value.Value,
+    stack: [STACK_MAX]Value,
+    sp: [*]Value,
 
     pub fn init() Vm {
         var vm = Vm{ .chunk = undefined, .ip = undefined, .stack = undefined, .sp = undefined };
@@ -22,32 +29,17 @@ pub const Vm = struct {
 
     pub fn free(_: Vm) void {}
 
-    pub fn interpret(vm: *Vm, source: []u8) InterpretResult {
+    pub fn interpret(vm: *Vm, source: []u8) InterpretError!void {
         var parser = Parser.init(source);
-        vm.chunk = Chunk.init() catch {return .INTERPRET_COMPILE_ERROR;};
-        parser.compile(&vm.chunk) catch {return .INTERPRET_COMPILE_ERROR;};
+        vm.chunk = try Chunk.init();
+
+        try parser.compile(&vm.chunk);
         vm.ip = vm.chunk.code.items.ptr;
 
-        return vm.run();
-
-        // var line: ?usize = null;
-        // while (true) {
-        //     const token = scanner.scanToken();
-        //     if (token.line != line) {
-        //         std.debug.print("{d:0>4} ", .{line orelse 0});
-        //         line = token.line;
-        //     } else {
-        //         std.debug.print("   | ", .{});
-        //     }
-        //     std.debug.print("{s} {s}\n", .{ @tagName(token.token_type), token.lexeme });
-        //
-        //     if (token.token_type == .EOF) {
-        //         break;
-        //     }
-        // }
+        try vm.run();
     }
 
-    fn run(self: *Vm) InterpretResult {
+    fn run(self: *Vm) RuntimeError!void {
         while (true) {
             const b = self.readByte();
             const instr: OpCode = @enumFromInt(b);
@@ -55,14 +47,19 @@ pub const Vm = struct {
                 .OP_RETURN => {
                     const val = self.pop();
                     std.debug.print("Return: {}\n", .{val});
-                    return InterpretResult.INTERPRET_OK;
+                    return;
                 },
                 .OP_NEGATE => {
-                    const val = self.pop();
-                    self.push(-val);
+                    var val = self.pop();
+                    if (val == .Number) {
+                        val.Number = -val.Number;
+                        self.push(val);
+                    } else {
+                        return RuntimeError.InvalidOperandType;
+                    }
                 },
                 .OP_ADD, OpCode.OP_SUBTRACT, OpCode.OP_MULTIPLY, OpCode.OP_DIVIDE => {
-                    self.interpretBinary(instr);
+                    try self.interpretBinary(instr);
                 },
                 .OP_CONSTANT => {
                     const val = readConstant(self);
@@ -78,16 +75,16 @@ pub const Vm = struct {
         return byte;
     }
 
-    fn readConstant(self: *Vm) value.Value {
+    fn readConstant(self: *Vm) Value {
         return self.chunk.constants.values.items[self.readByte()];
     }
 
-    fn push(self: *Vm, val: value.Value) void {
+    fn push(self: *Vm, val: Value) void {
         self.sp[0] = val;
         self.sp += 1;
     }
 
-    fn pop(self: *Vm) value.Value {
+    fn pop(self: *Vm) Value {
         self.sp -= 1;
         return self.sp[0];
     }
@@ -98,9 +95,9 @@ pub const Vm = struct {
         }
     }
 
-    fn interpretBinary(self: *Vm, op: OpCode) void {
-        const b = self.pop();
-        const a = self.pop();
+    fn interpretBinary(self: *Vm, op: OpCode) RuntimeError!void {
+        const b = try asNumber(self.pop());
+        const a = try asNumber(self.pop());
         const res = switch (op) {
             .OP_ADD => a + b,
             .OP_SUBTRACT => a - b,
@@ -108,7 +105,14 @@ pub const Vm = struct {
             .OP_DIVIDE => a / b,
             else => unreachable,
         };
-        self.push(res);
+        self.push(.{ .Number = res });
+    }
+
+    fn asNumber(val: Value) RuntimeError!f64 {
+        return switch (val) {
+            .Number => |n| n,
+            else => RuntimeError.InvalidOperandType,
+        };
     }
 };
 

@@ -36,7 +36,7 @@ fn repl(v_m: *vm.Vm) !void {
         std.debug.print("> ", .{});
         const input = try stdin.takeDelimiter('\n');
         if (input) |line| {            
-            _ = interpret(v_m, line);
+            interpret(v_m, line);
         } else {
             break;
         }
@@ -50,9 +50,9 @@ fn runFile(v_m: *vm.Vm, filename: []u8) !void {
 
     const buffer = try std.fs.cwd().readFileAlloc(alloc, filename, size);
 
-    _ = interpret(v_m, buffer);
+    interpret(v_m, buffer);
 }
 
-fn interpret(v_m: *vm.Vm, line: []u8) vm.InterpretResult {
-    return v_m.interpret(line);
+fn interpret(v_m: *vm.Vm, line: []u8) void {
+    v_m.interpret(line) catch |err| std.debug.print("{}", .{err});
 }

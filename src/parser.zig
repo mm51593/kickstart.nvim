@@ -46,10 +46,10 @@ pub const Parser = struct {
     }
 
     fn getNumber(self: *Parser) ParseError!void {
-        const val = std.fmt.parseFloat(Value, self.previous.lexeme) catch {
+        const val = std.fmt.parseFloat(f64, self.previous.lexeme) catch {
             return ParseError.InvalidCharacter;
         };
-        try self.emitConstant(val);
+        try self.emitConstant(Value{.Number = val});
     }
 
     fn getGrouping(self: *Parser) ParseError!void {
