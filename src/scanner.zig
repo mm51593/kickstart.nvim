@@ -88,7 +88,7 @@ pub const Scanner = struct {
     }
 
     fn makeString(self: *Scanner) Token {
-        while (self.peek() != '=' and !self.isAtEnd()) {
+        while (!self.isAtEnd() and self.peek() != '"') {
             if (self.peek() == '\n') {
                 self.line += 1;
             }
