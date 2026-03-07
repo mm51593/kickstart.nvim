@@ -6,61 +6,77 @@ const Scanner = @import("scanner.zig").Scanner;
 const Token = @import("token.zig").Token;
 const Value = @import("value.zig").Value;
 
-pub const ParseError = error{
-    TooManyConstants,
-    InvalidCharacter,
-    OutOfMemory,
-    ExpectedExpression,
-};
-
 pub const Parser = struct {
+    pub const Error = union(enum) {
+        TooManyConstants,
+        InvalidCharacter,
+        NotANumber,
+        UnexpectedToken: struct { expected: Token.Type },
+        ExpectedExpression,
+    };
+
+    pub const Diagnostic = struct {
+        error_type: Error,
+        token: Token,
+    };
+
+    alloc: std.mem.Allocator,
     current: Token,
     previous: Token,
-    scanner: Scanner,
-    chunk: *Chunk,
-    had_error: bool,
-    panic_mode: bool,
+    diagnostics: std.ArrayList(Diagnostic),
+    _chunk: ?Chunk,
+    _scanner: Scanner,
 
-    pub fn init(source: []const u8) Parser {
+    pub fn init(alloc: std.mem.Allocator) !Parser {
         return Parser{
+            .alloc = alloc,
             .current = undefined,
             .previous = undefined,
-            .scanner = Scanner.init(source),
-            .chunk = undefined,
-            .had_error = false,
-            .panic_mode = false,
+            .diagnostics = try std.ArrayList(Diagnostic).initCapacity(alloc, 4),
+            ._chunk = undefined,
+            ._scanner = undefined,
         };
     }
 
-    pub fn compile(self: *Parser, chunk: *Chunk) ParseError!void {
-        self.chunk = chunk;
-        self.advance();
+    pub fn deinit(self: *Parser) void {
+        self.diagnostics.deinit(self.alloc);
+    }
+
+    pub fn compile(self: *Parser, alloc: std.mem.Allocator, scanner: Scanner) !?Chunk {
+        self._chunk = try Chunk.init(alloc);
+        self._scanner = scanner;
+
+        try self.advance();
         try self.getExpr();
 
-        self.consume(.EOF, "Expected end of expression.");
+        try self.consume(.EOF);
         try self.endCompiler();
+
+        return self._chunk;
     }
 
-    fn getExpr(self: *Parser) ParseError!void {
-        try self.parsePrecendence(Precedence.Assignment);
+    fn getExpr(self: *Parser) !void {
+        try self.parsePrecendence(.Assignment);
     }
 
-    fn getNumber(self: *Parser) ParseError!void {
+    fn getNumber(self: *Parser) !void {
         const val = std.fmt.parseFloat(f64, self.previous.lexeme) catch {
-            return ParseError.InvalidCharacter;
+            return try self.reportError(.NotANumber);
         };
-        try self.emitConstant(Value{.Number = val});
+        try self.emitConstant(Value{ .Number = val });
     }
 
-    fn getGrouping(self: *Parser) ParseError!void {
+    fn getGrouping(self: *Parser) !void {
         try self.getExpr();
-        self.consume(.RIGHT_PAREN, "Expected ')' after expression.");
+        try self.consume(.RIGHT_PAREN);
+        unreachable;
     }
 
-    fn getBinary(self: *Parser) ParseError!void {
+    fn getBinary(self: *Parser) !void {
         const op = self.previous.token_type;
         const rule = ParseRule.getRule(op);
-        try self.parsePrecendence(@enumFromInt(@intFromEnum(rule.precedence) + 1));
+        const next_precedence: Precedence = @enumFromInt(@intFromEnum(rule.precedence) + 1);
+        try self.parsePrecendence(next_precedence);
 
         switch (op) {
             .PLUS => try self.emitOp(.OP_ADD),
@@ -71,10 +87,10 @@ pub const Parser = struct {
         }
     }
 
-    fn getUnary(self: *Parser) ParseError!void {
+    fn getUnary(self: *Parser) !void {
         const op = self.previous.token_type;
 
-        try self.parsePrecendence(Precedence.Unary);
+        try self.parsePrecendence(.Unary);
 
         switch (op) {
             .MINUS => try self.emitOp(.OP_NEGATE),
@@ -82,104 +98,107 @@ pub const Parser = struct {
         }
     }
 
-    fn parsePrecendence(self: *Parser, precedence: Precedence) ParseError!void {
-        self.advance();
+    fn parsePrecendence(self: *Parser, prec: Precedence) !void {
+        try self.advance();
         const prefix_rule = ParseRule.getRule(self.previous.token_type).prefix;
-        const p_rule = prefix_rule orelse return ParseError.ExpectedExpression;
-        try p_rule(self);
 
-        while (@intFromEnum(precedence) <= @intFromEnum(ParseRule.getRule(self.current.token_type).precedence)) {
-            self.advance();
+        if (prefix_rule) |valid_prefix_rule| {
+            try valid_prefix_rule(self);
+        } else {
+            return try self.reportError(.ExpectedExpression);
+        }
+
+        while (prec.cmp(ParseRule.getRule(self.current.token_type).precedence) <= 0) {
+            try self.advance();
             const infix_rule = ParseRule.getRule(self.previous.token_type).infix;
-            const i_rule = infix_rule orelse return ParseError.InvalidCharacter;
-            try i_rule(self);
+            if (infix_rule) |valid_infix_rule| {
+                try valid_infix_rule(self);
+            } else {
+                return try self.reportError(.ExpectedExpression);
+            }
         }
     }
 
-    fn emitOp(self: Parser, op: OpCode) ParseError!void {
-        self.chunk.writeOp(op, self.previous.line) catch {
-            return ParseError.OutOfMemory;
-        };
+    fn emitOp(self: *Parser, op: OpCode) !void {
+        if (self._chunk) |*chunk| {
+            try chunk.writeOp(op, self.previous.line);
+        }
     }
 
-    fn emitByte(self: Parser, byte: u8) ParseError!void {
-        self.chunk.write(u8, byte, self.previous.line) catch {
-            return ParseError.OutOfMemory;
-        };
+    fn emitByte(self: *Parser, byte: u8) !void {
+        if (self._chunk) |*chunk| {
+            try chunk.write(u8, byte, self.previous.line);
+        }
     }
 
-    fn emitConstant(self: Parser, value: Value) ParseError!void {
+    fn emitConstant(self: *Parser, value: Value) !void {
         try self.emitOp(OpCode.OP_CONSTANT);
         try self.emitByte(try makeConstant(self, value));
     }
 
-    fn makeConstant(self: Parser, value: Value) ParseError!u8 {
-        const addr = self.chunk.addConstant(value) catch {
-            return ParseError.OutOfMemory;
-        };
+    fn makeConstant(self: *Parser, value: Value) !u8 {
+        const addr = if (self._chunk) |*chunk|
+            try chunk.addConstant(value)
+        else
+            0;
+
         if (addr > std.math.maxInt(u8)) {
-            return ParseError.TooManyConstants;
+            try self.reportError(.TooManyConstants);
         }
 
         return @intCast(addr);
     }
 
-    fn endCompiler(self: Parser) !void {
-        self.emitOp(OpCode.OP_RETURN) catch {
-            return ParseError.OutOfMemory;
-        };
+    fn endCompiler(self: *Parser) !void {
+        try self.emitOp(OpCode.OP_RETURN);
     }
 
-    fn advance(self: *Parser) void {
+    fn advance(self: *Parser) !void {
         self.previous = self.current;
 
         while (true) {
-            self.current = self.scanner.scanToken();
+            self.current = self._scanner.scanToken();
             if (self.current.token_type != .ERROR) {
                 break;
             }
 
-            self.reportErrorAtCurrent(self.current.lexeme);
+            try self.reportErrorAtCurrent(.InvalidCharacter);
         }
     }
 
-    fn consume(self: *Parser, token_type: Token.Type, msg: []const u8) void {
+    fn consume(self: *Parser, token_type: Token.Type) !void {
         if (self.current.token_type == token_type) {
-            self.advance();
+            try self.advance();
             return;
         }
 
-        self.reportErrorAtCurrent(msg);
+        try self.reportErrorAtCurrent(.{ .UnexpectedToken = .{ .expected = token_type } });
     }
 
-    fn reportErrorAtCurrent(self: *Parser, msg: []const u8) void {
-        self.reportErrorAt(self.current, msg);
+    fn reportErrorAtCurrent(self: *Parser, err: Error) !void {
+        try self.reportErrorAt(self.current, err);
     }
 
-    fn reportError(self: *Parser, msg: []const u8) void {
-        self.reportErrorAt(self.previous, msg);
+    fn reportError(self: *Parser, err: Error) !void {
+        try self.reportErrorAt(self.previous, err);
     }
 
-    fn reportErrorAt(self: *Parser, token: Token, msg: []const u8) void {
-        if (self.panic_mode) {
-            return;
-        }
-        self.panic_mode = true;
+    fn reportErrorAt(self: *Parser, token: Token, err: Error) !void {
+        self.deallocChunk();
 
-        std.log.err("[line {}] Error", .{token.line});
+        try self.diagnostics.append(self.alloc, Diagnostic{ .error_type = err, .token = token });
+    }
 
-        switch (token.token_type) {
-            .EOF => std.log.err(" at end", .{}),
-            .ERROR => {},
-            else => std.log.err(" at {s}", .{token.lexeme}),
+    fn deallocChunk(self: *Parser) void {
+        if (self._chunk) |*chunk| {
+            chunk.deinit();
         }
 
-        std.log.err(": {s}", .{msg});
-        self.had_error = true;
+        self._chunk = null;
     }
 };
 
-const Precedence = enum(u8) {
+const Precedence = enum(i8) {
     None,
     Assignment,
     Or,
@@ -191,72 +210,60 @@ const Precedence = enum(u8) {
     Unary,
     Call,
     Primary,
+
+    fn cmp(self: Precedence, other: Precedence) i8 {
+        return @intFromEnum(self) - @intFromEnum(other);
+    }
 };
 
+const ParseFn = *const fn (*Parser) anyerror!void;
 const ParseRule = struct {
-    prefix: ParseFn,
-    infix: ParseFn,
+    prefix: ?ParseFn,
+    infix: ?ParseFn,
     precedence: Precedence,
 
-    const ParseFn = ?*const fn (*Parser) ParseError!void;
-    fn init(prefix: ParseFn, infix: ParseFn, precedence: Precedence) ParseRule {
-        return ParseRule{
-            .prefix = prefix,
-            .infix = infix,
-            .precedence = precedence,
-        };
-    }
-
-    const group = Parser.getGrouping;
-    const unary = Parser.getUnary;
-    const binary = Parser.getBinary;
-    const number = Parser.getNumber;
-    const p = Precedence;
-    // zig fmt: off
     fn getRule(token_type: Token.Type) ParseRule {
         return switch (token_type) {
-            .LEFT_PAREN    => init(group,     null,   p.None),
-            .RIGHT_PAREN   => init(null,      null,   p.None),
-            .LEFT_BRACE    => init(null,      null,   p.None),
-            .RIGHT_BRACE   => init(null,      null,   p.None),
-            .COMMA         => init(null,      null,   p.None),
-            .DOT           => init(null,      null,   p.None),
-            .MINUS         => init(unary,     binary, p.Term),
-            .PLUS          => init(null,      binary, p.Term),
-            .SEMICOLON     => init(null,      null,   p.None),
-            .SLASH         => init(null,      binary, p.Factor),
-            .STAR          => init(null,      binary, p.Factor),
-            .BANG          => init(unary,     null,   p.None),
-            .BANG_EQUAL    => init(null,      binary, p.Comparison),
-            .EQUAL         => init(null,      null,   p.None),
-            .EQUAL_EQUAL   => init(null,      binary, p.Comparison),
-            .GREATER       => init(null,      binary, p.Comparison),
-            .GREATER_EQUAL => init(null,      binary, p.Comparison),
-            .LESS          => init(null,      binary, p.Comparison),
-            .LESS_EQUAL    => init(null,      binary, p.Comparison),
-            .IDENTIFIER    => init(null,      null,   p.None),
-            .STRING        => init(null,      null,   p.None),
-            .NUMBER        => init(number,    null,   p.None),
-            .AND           => init(null,      null,   p.None),
-            .CLASS         => init(null,      null,   p.None),
-            .ELSE          => init(null,      null,   p.None),
-            .FALSE         => init(null,      null,   p.None),
-            .FUN           => init(null,      null,   p.None),
-            .FOR           => init(null,      null,   p.None),
-            .IF            => init(null,      null,   p.None),
-            .NIL           => init(null,      null,   p.None),
-            .OR            => init(null,      null,   p.None),
-            .PRINT         => init(null,      null,   p.None),
-            .RETURN        => init(null,      null,   p.None),
-            .SUPER         => init(null,      null,   p.None),
-            .THIS          => init(null,      null,   p.None),
-            .TRUE          => init(null,      null,   p.None),
-            .VAR           => init(null,      null,   p.None),
-            .WHILE         => init(null,      null,   p.None),
-            .EOF           => init(null,      null,   p.None),
-            .ERROR         => init(null,      null,   p.None),
-            
+            .LEFT_PAREN => ParseRule{ .prefix = Parser.getGrouping, .infix = null, .precedence = Precedence.None },
+            .RIGHT_PAREN => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .LEFT_BRACE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .RIGHT_BRACE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .COMMA => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .DOT => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .MINUS => ParseRule{ .prefix = Parser.getUnary, .infix = Parser.getBinary, .precedence = Precedence.Term },
+            .PLUS => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Term },
+            .SEMICOLON => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .SLASH => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Factor },
+            .STAR => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Factor },
+            .BANG => ParseRule{ .prefix = Parser.getUnary, .infix = null, .precedence = Precedence.None },
+            .BANG_EQUAL => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
+            .EQUAL => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .EQUAL_EQUAL => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
+            .GREATER => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
+            .GREATER_EQUAL => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
+            .LESS => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
+            .LESS_EQUAL => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
+            .IDENTIFIER => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .STRING => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .NUMBER => ParseRule{ .prefix = Parser.getNumber, .infix = null, .precedence = Precedence.None },
+            .AND => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .CLASS => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .ELSE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .FALSE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .FUN => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .FOR => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .IF => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .NIL => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .OR => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .PRINT => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .RETURN => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .SUPER => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .THIS => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .TRUE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .VAR => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .WHILE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .EOF => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
+            .ERROR => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
         };
-
     }
 };

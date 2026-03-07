@@ -1,6 +1,8 @@
 const std = @import("std");
 const Chunk = @import("chunk.zig").Chunk;
 const Value = @import("value.zig").Value;
+const ValueTag = @import("value.zig").ValueTag;
+const ValueError = @import("value.zig").ValueError;
 const BYTE = @import("op_code.zig").BYTE;
 const OpCode = @import("op_code.zig").OpCode;
 const Scanner = @import("scanner.zig").Scanner;
@@ -9,11 +11,7 @@ const ParseError = @import("parser.zig").ParseError;
 
 const STACK_MAX = 256;
 
-pub const RuntimeError = error{
-    InvalidOperandType,
-};
-
-pub const InterpretError = RuntimeError || ParseError;
+pub const RuntimeError = ValueError;
 
 pub const Vm = struct {
     chunk: Chunk,
@@ -27,13 +25,10 @@ pub const Vm = struct {
         return vm;
     }
 
-    pub fn free(_: Vm) void {}
+    pub fn deinit(_: Vm) void {}
 
-    pub fn interpret(vm: *Vm, source: []u8) InterpretError!void {
-        var parser = Parser.init(source);
-        vm.chunk = try Chunk.init();
-
-        try parser.compile(&vm.chunk);
+    pub fn interpret(vm: *Vm, chunk: Chunk) !void {
+        vm.chunk = chunk;
         vm.ip = vm.chunk.code.items.ptr;
 
         try vm.run();
@@ -50,13 +45,9 @@ pub const Vm = struct {
                     return;
                 },
                 .OP_NEGATE => {
-                    var val = self.pop();
-                    if (val == .Number) {
-                        val.Number = -val.Number;
-                        self.push(val);
-                    } else {
-                        return RuntimeError.InvalidOperandType;
-                    }
+                    const val = self.pop();
+                    const negated = -try val.as(.Number);
+                    self.push(try pack(f64, negated));
                 },
                 .OP_ADD, OpCode.OP_SUBTRACT, OpCode.OP_MULTIPLY, OpCode.OP_DIVIDE => {
                     try self.interpretBinary(instr);
@@ -96,8 +87,8 @@ pub const Vm = struct {
     }
 
     fn interpretBinary(self: *Vm, op: OpCode) RuntimeError!void {
-        const b = try asNumber(self.pop());
-        const a = try asNumber(self.pop());
+        const b = try self.pop().as(.Number);
+        const a = try self.pop().as(.Number);
         const res = switch (op) {
             .OP_ADD => a + b,
             .OP_SUBTRACT => a - b,
@@ -108,10 +99,12 @@ pub const Vm = struct {
         self.push(.{ .Number = res });
     }
 
-    fn asNumber(val: Value) RuntimeError!f64 {
-        return switch (val) {
-            .Number => |n| n,
-            else => RuntimeError.InvalidOperandType,
+    fn pack(comptime T: type, raw_value: T) ValueError!Value {
+        return switch (T) {
+            f64 => Value{ .Number = raw_value },
+            bool => Value{ .Bool = raw_value },
+            void => Value{ .Nil },
+            else => ValueError.InvalidType,
         };
     }
 };

@@ -124,8 +124,8 @@ pub const Scanner = struct {
     }
 
     fn makeIdentifier(self: *Scanner) Token {
-        while (std.ascii.isAlphabetic(self.peek()) or
-            std.ascii.isDigit(self.peek()) or self.peek() == '_')
+        while (!self.isAtEnd() and (std.ascii.isAlphabetic(self.peek()) or
+            std.ascii.isDigit(self.peek()) or self.peek() == '_'))
         {
             _ = self.advance();
         }
