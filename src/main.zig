@@ -53,7 +53,8 @@ fn interpret(line: []u8, alloc: std.mem.Allocator) !void {
     const chunk = try parser.compile(alloc, scanner);
     if (chunk) |valid_chunk| {
         var vm = Vm.init();
-        vm.interpret(valid_chunk) catch |err| std.debug.print("{}", .{err});
+        vm.interpret(valid_chunk) catch |err|
+            std.debug.print("Runtime error: {}\n", .{err});
     } else {
         for (parser.diagnostics.items) |diag| {
             std.debug.print("Line {}: syntax error: {s}\n", .{ diag.token.line, @tagName(diag.error_type) });

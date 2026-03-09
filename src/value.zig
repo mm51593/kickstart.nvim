@@ -1,10 +1,9 @@
-const Allocator = @import("std").mem.Allocator;
-const fmt = @import("std").fmt;
-const meta = @import("std").meta;
+const std = @import("std");
+const Allocator = std.mem.Allocator;
+const ArrayList = std.ArrayList;
+const meta = std.meta;
 
 const INITIAL_CAPACITY = 8;
-const ArrayList = @import("std").ArrayList;
-
 pub const ValueError = error{
     InvalidType,
 };
@@ -26,6 +25,14 @@ pub const Value = union(ValueTag) {
         }
 
         return @field(self, @tagName(tag));
+    }
+
+    pub fn fmt(self: Value, buf: []u8) ![]u8 {
+        return switch (self) {
+            .Number => |n| try std.fmt.bufPrint(buf, "{}", .{n}),
+            .Bool => |b| try std.fmt.bufPrint(buf, "{}", .{b}),
+            .Nil => try std.fmt.bufPrint(buf, "nil", .{}),
+        };
     }
 };
 

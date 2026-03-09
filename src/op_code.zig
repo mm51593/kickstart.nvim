@@ -27,8 +27,9 @@ pub const OpCode = enum(BYTE) {
 
     // constant
     OP_CONSTANT,
-
-    const BINARY_OPS = [_]OpCode{ .OP_ADD, .OP_SUBTRACT, .OP_MULTIPLY, .OP_DIVIDE };
+    OP_NIL,
+    OP_TRUE,
+    OP_FALSE,
 
     pub fn render(self: OpCode, buf: []u8, bytestream: []BYTE) !RenderOffsetPair {
         var offset: usize = 0;

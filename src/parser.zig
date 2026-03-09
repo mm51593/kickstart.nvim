@@ -56,26 +56,26 @@ pub const Parser = struct {
     }
 
     fn getExpr(self: *Parser) !void {
-        try self.parsePrecendence(.Assignment);
+        try self.parsePrecendence(.Asgn);
     }
 
-    fn getNumber(self: *Parser) !void {
+    fn getNum(self: *Parser) !void {
         const val = std.fmt.parseFloat(f64, self.previous.lexeme) catch {
             return try self.reportError(.NotANumber);
         };
         try self.emitConstant(Value{ .Number = val });
     }
 
-    fn getGrouping(self: *Parser) !void {
+    fn getGrp(self: *Parser) !void {
         try self.getExpr();
         try self.consume(.RIGHT_PAREN);
         unreachable;
     }
 
-    fn getBinary(self: *Parser) !void {
+    fn getBin(self: *Parser) !void {
         const op = self.previous.token_type;
         const rule = ParseRule.getRule(op);
-        const next_precedence: Precedence = @enumFromInt(@intFromEnum(rule.precedence) + 1);
+        const next_precedence: Precedence = @enumFromInt(@intFromEnum(rule.prec) + 1);
         try self.parsePrecendence(next_precedence);
 
         switch (op) {
@@ -87,10 +87,19 @@ pub const Parser = struct {
         }
     }
 
-    fn getUnary(self: *Parser) !void {
+    fn getLit(self: *Parser) !void {
+        switch (self.previous.token_type) {
+            .TRUE => try self.emitOp(.OP_TRUE),
+            .FALSE => try self.emitOp(.OP_FALSE),
+            .NIL => try self.emitOp(.OP_NIL),
+            else => unreachable,
+        }
+    }
+
+    fn getUnar(self: *Parser) !void {
         const op = self.previous.token_type;
 
-        try self.parsePrecendence(.Unary);
+        try self.parsePrecendence(.Unar);
 
         switch (op) {
             .MINUS => try self.emitOp(.OP_NEGATE),
@@ -108,7 +117,7 @@ pub const Parser = struct {
             return try self.reportError(.ExpectedExpression);
         }
 
-        while (prec.cmp(ParseRule.getRule(self.current.token_type).precedence) <= 0) {
+        while (prec.cmp(ParseRule.getRule(self.current.token_type).prec) <= 0) {
             try self.advance();
             const infix_rule = ParseRule.getRule(self.previous.token_type).infix;
             if (infix_rule) |valid_infix_rule| {
@@ -200,16 +209,16 @@ pub const Parser = struct {
 
 const Precedence = enum(i8) {
     None,
-    Assignment,
+    Asgn,
     Or,
     And,
-    Equality,
-    Comparison,
+    Eql,
+    Cmp,
     Term,
-    Factor,
-    Unary,
+    Fact,
+    Unar,
     Call,
-    Primary,
+    Prim,
 
     fn cmp(self: Precedence, other: Precedence) i8 {
         return @intFromEnum(self) - @intFromEnum(other);
@@ -220,50 +229,68 @@ const ParseFn = *const fn (*Parser) anyerror!void;
 const ParseRule = struct {
     prefix: ?ParseFn,
     infix: ?ParseFn,
-    precedence: Precedence,
+    prec: Precedence,
+
+    const p = Parser;
+    const q = Precedence;
+
+    fn rule(prefix: ?ParseFn, infix: ?ParseFn, prec: Precedence) ParseRule {
+        return .{ .prefix = prefix, .infix = infix, .prec = prec };
+    }
+
+    const rules = blk: {
+        var table: [std.enums.values(Token.Type).len]ParseRule = undefined;
+
+        for (std.enums.values(Token.Type)) |tag| {
+            table[@intFromEnum(tag)] = switch (tag) {
+                // zig fmt: off
+                .LEFT_PAREN    => rule(p.getGrp,  null,     .None),
+                .RIGHT_PAREN   => rule(null,      null,     .None),
+                .LEFT_BRACE    => rule(null,      null,     .None),
+                .RIGHT_BRACE   => rule(null,      null,     .None),
+                .COMMA         => rule(null,      null,     .None),
+                .DOT           => rule(null,      null,     .None),
+                .MINUS         => rule(p.getUnar, p.getBin, .Term),
+                .PLUS          => rule(null,      p.getBin, .Term),
+                .SEMICOLON     => rule(null,      null,     .None),
+                .SLASH         => rule(null,      p.getBin, .Fact),
+                .STAR          => rule(null,      p.getBin, .Fact),
+                .BANG          => rule(p.getUnar, null,     .None),
+                .BANG_EQUAL    => rule(null,      p.getBin, .Cmp ),
+                .EQUAL         => rule(null,      null,     .None),
+                .EQUAL_EQUAL   => rule(null,      p.getBin, .Cmp ),
+                .GREATER       => rule(null,      p.getBin, .Cmp ),
+                .GREATER_EQUAL => rule(null,      p.getBin, .Cmp ),
+                .LESS          => rule(null,      p.getBin, .Cmp ),
+                .LESS_EQUAL    => rule(null,      p.getBin, .Cmp ),
+                .IDENTIFIER    => rule(null,      null,     .None),
+                .STRING        => rule(null,      null,     .None),
+                .NUMBER        => rule(p.getNum,  null,     .None),
+                .AND           => rule(null,      null,     .None),
+                .CLASS         => rule(null,      null,     .None),
+                .ELSE          => rule(null,      null,     .None),
+                .FALSE         => rule(p.getLit,  null,     .None),
+                .FUN           => rule(null,      null,     .None),
+                .FOR           => rule(null,      null,     .None),
+                .IF            => rule(null,      null,     .None),
+                .NIL           => rule(null,      null,     .None),
+                .OR            => rule(null,      null,     .None),
+                .PRINT         => rule(null,      null,     .None),
+                .RETURN        => rule(null,      null,     .None),
+                .SUPER         => rule(null,      null,     .None),
+                .THIS          => rule(null,      null,     .None),
+                .TRUE          => rule(p.getLit,  null,     .None),
+                .VAR           => rule(null,      null,     .None),
+                .WHILE         => rule(null,      null,     .None),
+                .EOF           => rule(null,      null,     .None),
+                .ERROR         => rule(null,      null,     .None),
+            };
+        }
+
+        break :blk table;
+    };
 
     fn getRule(token_type: Token.Type) ParseRule {
-        return switch (token_type) {
-            .LEFT_PAREN => ParseRule{ .prefix = Parser.getGrouping, .infix = null, .precedence = Precedence.None },
-            .RIGHT_PAREN => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .LEFT_BRACE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .RIGHT_BRACE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .COMMA => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .DOT => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .MINUS => ParseRule{ .prefix = Parser.getUnary, .infix = Parser.getBinary, .precedence = Precedence.Term },
-            .PLUS => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Term },
-            .SEMICOLON => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .SLASH => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Factor },
-            .STAR => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Factor },
-            .BANG => ParseRule{ .prefix = Parser.getUnary, .infix = null, .precedence = Precedence.None },
-            .BANG_EQUAL => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
-            .EQUAL => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .EQUAL_EQUAL => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
-            .GREATER => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
-            .GREATER_EQUAL => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
-            .LESS => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
-            .LESS_EQUAL => ParseRule{ .prefix = null, .infix = Parser.getBinary, .precedence = Precedence.Comparison },
-            .IDENTIFIER => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .STRING => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .NUMBER => ParseRule{ .prefix = Parser.getNumber, .infix = null, .precedence = Precedence.None },
-            .AND => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .CLASS => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .ELSE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .FALSE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .FUN => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .FOR => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .IF => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .NIL => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .OR => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .PRINT => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .RETURN => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .SUPER => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .THIS => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .TRUE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .VAR => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .WHILE => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .EOF => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-            .ERROR => ParseRule{ .prefix = null, .infix = null, .precedence = Precedence.None },
-        };
+        return rules[@intFromEnum(token_type)];
     }
 };

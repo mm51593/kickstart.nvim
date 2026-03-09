@@ -1,17 +1,16 @@
 const std = @import("std");
-const Chunk = @import("chunk.zig").Chunk;
-const Value = @import("value.zig").Value;
-const ValueTag = @import("value.zig").ValueTag;
-const ValueError = @import("value.zig").ValueError;
+
 const BYTE = @import("op_code.zig").BYTE;
+const Chunk = @import("chunk.zig").Chunk;
 const OpCode = @import("op_code.zig").OpCode;
-const Scanner = @import("scanner.zig").Scanner;
-const Parser = @import("parser.zig").Parser;
 const ParseError = @import("parser.zig").ParseError;
+const Parser = @import("parser.zig").Parser;
+const Scanner = @import("scanner.zig").Scanner;
+const Value = @import("value.zig").Value;
+const ValueError = @import("value.zig").ValueError;
+const ValueTag = @import("value.zig").ValueTag;
 
 const STACK_MAX = 256;
-
-pub const RuntimeError = ValueError;
 
 pub const Vm = struct {
     chunk: Chunk,
@@ -34,14 +33,15 @@ pub const Vm = struct {
         try vm.run();
     }
 
-    fn run(self: *Vm) RuntimeError!void {
+    fn run(self: *Vm) !void {
         while (true) {
             const b = self.readByte();
             const instr: OpCode = @enumFromInt(b);
             switch (instr) {
                 .OP_RETURN => {
                     const val = self.pop();
-                    std.debug.print("Return: {}\n", .{val});
+                    std.debug.print("Return: ", .{});
+                    try printValue(val);
                     return;
                 },
                 .OP_NEGATE => {
@@ -55,6 +55,15 @@ pub const Vm = struct {
                 .OP_CONSTANT => {
                     const val = readConstant(self);
                     self.push(val);
+                },
+                .OP_NIL => {
+                    self.push(Value.Nil);
+                },
+                .OP_TRUE => {
+                    self.push(.{ .Bool = true });
+                },
+                .OP_FALSE => {
+                    self.push(.{ .Bool = false });
                 },
             }
         }
@@ -86,7 +95,7 @@ pub const Vm = struct {
         }
     }
 
-    fn interpretBinary(self: *Vm, op: OpCode) RuntimeError!void {
+    fn interpretBinary(self: *Vm, op: OpCode) !void {
         const b = try self.pop().as(.Number);
         const a = try self.pop().as(.Number);
         const res = switch (op) {
@@ -103,9 +112,14 @@ pub const Vm = struct {
         return switch (T) {
             f64 => Value{ .Number = raw_value },
             bool => Value{ .Bool = raw_value },
-            void => Value{ .Nil },
+            void => Value{.Nil},
             else => ValueError.InvalidType,
         };
+    }
+
+    fn printValue(value: Value) !void {
+        var buf: [10]u8 = undefined;
+        std.debug.print("{s}\n", .{try value.fmt(&buf)});
     }
 };
 
