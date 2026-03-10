@@ -7,8 +7,12 @@ const ParseError = @import("parser.zig").ParseError;
 const Parser = @import("parser.zig").Parser;
 const Scanner = @import("scanner.zig").Scanner;
 const Value = @import("value.zig").Value;
-const ValueError = @import("value.zig").ValueError;
 const ValueTag = @import("value.zig").ValueTag;
+
+pub const RuntimeError = error{
+    InvalidOperand,
+    BufferTooSmall,
+};
 
 const STACK_MAX = 256;
 
@@ -45,9 +49,9 @@ pub const Vm = struct {
                     return;
                 },
                 .OP_NEGATE => {
-                    const val = self.pop();
-                    const negated = -try val.as(.Number);
-                    self.push(try pack(f64, negated));
+                    const val = try unpack(self.pop().as(.Number));
+                    const negated = -val;
+                    self.push(try pack(negated));
                 },
                 .OP_ADD, OpCode.OP_SUBTRACT, OpCode.OP_MULTIPLY, OpCode.OP_DIVIDE => {
                     try self.interpretBinary(instr);
@@ -95,9 +99,9 @@ pub const Vm = struct {
         }
     }
 
-    fn interpretBinary(self: *Vm, op: OpCode) !void {
-        const b = try self.pop().as(.Number);
-        const a = try self.pop().as(.Number);
+    fn interpretBinary(self: *Vm, op: OpCode) RuntimeError!void {
+        const b = try unpack(self.pop().as(.Number));
+        const a = try unpack(self.pop().as(.Number));
         const res = switch (op) {
             .OP_ADD => a + b,
             .OP_SUBTRACT => a - b,
@@ -108,18 +112,33 @@ pub const Vm = struct {
         self.push(.{ .Number = res });
     }
 
-    fn pack(comptime T: type, raw_value: T) ValueError!Value {
+    fn unpack(val: anytype) RuntimeError!payload(@TypeOf(val)) {
+        return val catch RuntimeError.InvalidOperand;
+    }
+
+    fn pack(raw_value: anytype) RuntimeError!Value {
+        const T = @TypeOf(raw_value);
         return switch (T) {
             f64 => Value{ .Number = raw_value },
             bool => Value{ .Bool = raw_value },
             void => Value{.Nil},
-            else => ValueError.InvalidType,
+            else => RuntimeError.InvalidOperand,
         };
     }
 
-    fn printValue(value: Value) !void {
-        var buf: [10]u8 = undefined;
-        std.debug.print("{s}\n", .{try value.fmt(&buf)});
+    fn payload(comptime T: type) type {
+        return switch (@typeInfo(T)) {
+            .error_union => |eu| eu.payload,
+            else => @compileError("Expecting an error union"),
+        };
+    }
+
+    pub fn printValue(val: Value) !void {
+        switch (val) {
+            .Number => |n| std.debug.print("{}\n", .{n}),
+            .Bool => |b| std.debug.print("{}\n", .{b}),
+            .Nil => std.debug.print("nil", .{}),
+        }
     }
 };
 

@@ -26,14 +26,6 @@ pub const Value = union(ValueTag) {
 
         return @field(self, @tagName(tag));
     }
-
-    pub fn fmt(self: Value, buf: []u8) ![]u8 {
-        return switch (self) {
-            .Number => |n| try std.fmt.bufPrint(buf, "{}", .{n}),
-            .Bool => |b| try std.fmt.bufPrint(buf, "{}", .{b}),
-            .Nil => try std.fmt.bufPrint(buf, "nil", .{}),
-        };
-    }
 };
 
 pub const ValueArray = struct {
