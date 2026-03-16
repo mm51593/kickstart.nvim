@@ -26,6 +26,11 @@ pub const OpCode = enum(BYTE) {
     OP_MULTIPLY,
     OP_DIVIDE,
 
+    // Comparison
+    OP_EQUAL,
+    OP_GREATER,
+    OP_LESS,
+
     // constant
     OP_CONSTANT,
     OP_NIL,

@@ -83,6 +83,21 @@ pub const Parser = struct {
             .MINUS => try self.emitOp(.OP_SUBTRACT),
             .STAR => try self.emitOp(.OP_MULTIPLY),
             .SLASH => try self.emitOp(.OP_DIVIDE),
+            .BANG_EQUAL => {
+                try self.emitOp(.OP_EQUAL);
+                try self.emitOp(.OP_NOT);
+            },
+            .EQUAL_EQUAL => try self.emitOp(.OP_EQUAL),
+            .GREATER => try self.emitOp(.OP_GREATER),
+            .GREATER_EQUAL => {
+                try self.emitOp(.OP_LESS);
+                try self.emitOp(.OP_NOT);
+            },
+            .LESS => try self.emitOp(.OP_LESS),
+            .LESS_EQUAL => {
+                try self.emitOp(.OP_GREATER);
+                try self.emitOp(.OP_NOT);
+            },
             else => unreachable,
         }
     }
@@ -257,9 +272,9 @@ const ParseRule = struct {
                 .SLASH         => rule(null,      p.getBin, .Fact),
                 .STAR          => rule(null,      p.getBin, .Fact),
                 .BANG          => rule(p.getUnar, null,     .None),
-                .BANG_EQUAL    => rule(null,      p.getBin, .Cmp ),
+                .BANG_EQUAL    => rule(null,      p.getBin, .Eql ),
                 .EQUAL         => rule(null,      null,     .None),
-                .EQUAL_EQUAL   => rule(null,      p.getBin, .Cmp ),
+                .EQUAL_EQUAL   => rule(null,      p.getBin, .Eql ),
                 .GREATER       => rule(null,      p.getBin, .Cmp ),
                 .GREATER_EQUAL => rule(null,      p.getBin, .Cmp ),
                 .LESS          => rule(null,      p.getBin, .Cmp ),

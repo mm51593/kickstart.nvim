@@ -39,8 +39,8 @@ pub const Vm = struct {
 
     fn run(self: *Vm) !void {
         while (true) {
-            const b = self.readByte();
-            const instr: OpCode = @enumFromInt(b);
+            const word = self.readByte();
+            const instr: OpCode = @enumFromInt(word);
             switch (instr) {
                 .OP_RETURN => {
                     const val = self.pop();
@@ -58,8 +58,9 @@ pub const Vm = struct {
                     const negated = try isFalsey(val);
                     self.push(try pack(negated));
                 },
-                .OP_ADD, OpCode.OP_SUBTRACT, OpCode.OP_MULTIPLY, OpCode.OP_DIVIDE => {
-                    try self.interpretBinary(instr);
+                .OP_ADD, .OP_SUBTRACT, .OP_MULTIPLY, .OP_DIVIDE, 
+                .OP_GREATER, .OP_LESS => {
+                    self.push(try self.interpretBinary(instr));
                 },
                 .OP_CONSTANT => {
                     const val = readConstant(self);
@@ -73,6 +74,11 @@ pub const Vm = struct {
                 },
                 .OP_FALSE => {
                     self.push(.{ .Bool = false });
+                },
+                .OP_EQUAL => {
+                    const a = self.pop();
+                    const b = self.pop();
+                    self.push(try pack(try valuesEqual(a, b)));
                 },
             }
         }
@@ -104,17 +110,18 @@ pub const Vm = struct {
         }
     }
 
-    fn interpretBinary(self: *Vm, op: OpCode) RuntimeError!void {
+    fn interpretBinary(self: *Vm, op: OpCode) RuntimeError!Value {
         const b = try unpack(self.pop().as(.Number));
         const a = try unpack(self.pop().as(.Number));
-        const res = switch (op) {
-            .OP_ADD => a + b,
-            .OP_SUBTRACT => a - b,
-            .OP_MULTIPLY => a * b,
-            .OP_DIVIDE => a / b,
+        return switch (op) {
+            .OP_ADD => try pack(a + b),
+            .OP_SUBTRACT => try pack(a - b),
+            .OP_MULTIPLY => try pack(a * b),
+            .OP_DIVIDE => try pack(a / b),
+            .OP_GREATER => try pack(a > b),
+            .OP_LESS => try pack(a < b),
             else => unreachable,
         };
-        self.push(.{ .Number = res });
     }
 
     fn unpack(val: anytype) RuntimeError!payload(@TypeOf(val)) {
@@ -146,6 +153,18 @@ pub const Vm = struct {
 
         try unpack(val.as(.Nil));
         return true;
+    }
+
+    fn valuesEqual(a: Value, b: Value) RuntimeError!bool {
+        if (std.meta.activeTag(a) != std.meta.activeTag(b)) {
+            return false;
+        }
+
+        return switch (a) {
+            .Number => try unpack(a.as(.Number)) == try unpack(b.as(.Number)),
+            .Bool => try unpack(a.as(.Bool)) == try unpack(b.as(.Bool)),
+            .Nil => true,
+        };
     }
 
     pub fn printValue(val: Value) !void {
