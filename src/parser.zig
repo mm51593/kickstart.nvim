@@ -103,6 +103,7 @@ pub const Parser = struct {
 
         switch (op) {
             .MINUS => try self.emitOp(.OP_NEGATE),
+            .BANG => try self.emitOp(.OP_NOT),
             else => unreachable,
         }
     }
@@ -273,7 +274,7 @@ const ParseRule = struct {
                 .FUN           => rule(null,      null,     .None),
                 .FOR           => rule(null,      null,     .None),
                 .IF            => rule(null,      null,     .None),
-                .NIL           => rule(null,      null,     .None),
+                .NIL           => rule(p.getLit,  null,     .None),
                 .OR            => rule(null,      null,     .None),
                 .PRINT         => rule(null,      null,     .None),
                 .RETURN        => rule(null,      null,     .None),

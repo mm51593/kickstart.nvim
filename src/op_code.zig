@@ -18,6 +18,7 @@ pub const OpCode = enum(BYTE) {
 
     // unary
     OP_NEGATE,
+    OP_NOT,
 
     // binary
     OP_ADD,

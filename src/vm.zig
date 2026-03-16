@@ -53,6 +53,11 @@ pub const Vm = struct {
                     const negated = -val;
                     self.push(try pack(negated));
                 },
+                .OP_NOT => {
+                    const val = self.pop();
+                    const negated = try isFalsey(val);
+                    self.push(try pack(negated));
+                },
                 .OP_ADD, OpCode.OP_SUBTRACT, OpCode.OP_MULTIPLY, OpCode.OP_DIVIDE => {
                     try self.interpretBinary(instr);
                 },
@@ -131,6 +136,16 @@ pub const Vm = struct {
             .error_union => |eu| eu.payload,
             else => @compileError("Expecting an error union"),
         };
+    }
+
+    fn isFalsey(val: Value) RuntimeError!bool {
+        const maybe_bool_val = unpack(val.as(.Bool)) catch null;
+        if (maybe_bool_val) |bool_val| {
+            return !bool_val;
+        }
+
+        try unpack(val.as(.Nil));
+        return true;
     }
 
     pub fn printValue(val: Value) !void {
