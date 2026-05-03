@@ -20,7 +20,7 @@ pub const Value = union(ValueTag) {
     Bool: bool,
     Nil,
 
-    pub fn as(self: Value, comptime tag: ValueTag) ValueError!meta.TagPayload(Value, tag) {
+    pub fn as(self: Value, comptime tag: ValueTag) ValueError!@FieldType(Value, @tagName(tag)) {
         if (meta.activeTag(self) != tag) {
             return ValueError.InvalidType;
         }
@@ -46,4 +46,3 @@ pub const ValueArray = struct {
         self.values.deinit(self.alloc);
     }
 };
-
