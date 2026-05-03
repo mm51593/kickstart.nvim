@@ -69,7 +69,6 @@ pub const Parser = struct {
     fn getGrp(self: *Parser) !void {
         try self.getExpr();
         try self.consume(.RIGHT_PAREN);
-        unreachable;
     }
 
     fn getBin(self: *Parser) !void {
