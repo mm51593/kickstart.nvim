@@ -1,4 +1,5 @@
 const std = @import("std");
+const Allocator = @import("std").mem.Allocator;
 
 const BYTE = @import("op_code.zig").BYTE;
 const Chunk = @import("chunk.zig").Chunk;
@@ -8,6 +9,8 @@ const Parser = @import("parser.zig").Parser;
 const Scanner = @import("scanner.zig").Scanner;
 const Value = @import("value.zig").Value;
 const ValueTag = @import("value.zig").ValueTag;
+const Obj = @import("object.zig").Obj;
+const ObjString = @import("object.zig").ObjString;
 
 pub const RuntimeError = error{
     InvalidOperand,
@@ -21,9 +24,10 @@ pub const Vm = struct {
     ip: [*]u8,
     stack: [STACK_MAX]Value,
     sp: [*]Value,
+    alloc: Allocator,
 
-    pub fn init() Vm {
-        var vm = Vm{ .chunk = undefined, .ip = undefined, .stack = undefined, .sp = undefined };
+    pub fn init(alloc: Allocator) Vm {
+        var vm = Vm{ .chunk = undefined, .ip = undefined, .stack = undefined, .sp = undefined, .alloc = alloc };
         vm.sp = &vm.stack;
         return vm;
     }
@@ -58,9 +62,26 @@ pub const Vm = struct {
                     const negated = try isFalsey(val);
                     self.push(try pack(negated));
                 },
-                .OP_ADD, .OP_SUBTRACT, .OP_MULTIPLY, .OP_DIVIDE, 
-                .OP_GREATER, .OP_LESS => {
-                    self.push(try self.interpretBinary(instr));
+                .OP_ADD, => {
+                    const b = self.pop();
+                    const a = self.pop();
+
+                    if (a.is(.Number) and b.is(.Number)) {
+                        self.push(try interpretNumBinary(a, b, instr));
+                    } else if (a.isObjType(.OBJ_STRING) and b.isObjType(.OBJ_STRING)) {
+                        const a_str = try (try a.as(.Obj)).as(ObjString);
+                        const b_str = try (try b.as(.Obj)).as(ObjString);
+                        const concat = try ObjString.concatenate(self.alloc, a_str, b_str);
+                        self.push(try pack(&concat.obj));
+                    } else {
+                        return RuntimeError.InvalidOperand;
+                    }
+                },
+                .OP_SUBTRACT, .OP_MULTIPLY, .OP_DIVIDE, .OP_GREATER, .OP_LESS => {
+                    const b = self.pop();
+                    const a = self.pop();
+
+                    self.push(try interpretNumBinary(a, b, instr));
                 },
                 .OP_CONSTANT => {
                     const val = readConstant(self);
@@ -110,9 +131,9 @@ pub const Vm = struct {
         }
     }
 
-    fn interpretBinary(self: *Vm, op: OpCode) RuntimeError!Value {
-        const b = try unpack(self.pop().as(.Number));
-        const a = try unpack(self.pop().as(.Number));
+    fn interpretNumBinary(op1: Value, op2: Value, op: OpCode) RuntimeError!Value {
+        const b = try unpack(op1.as(.Number));
+        const a = try unpack(op2.as(.Number));
         return switch (op) {
             .OP_ADD => try pack(a + b),
             .OP_SUBTRACT => try pack(a - b),
@@ -134,6 +155,7 @@ pub const Vm = struct {
             f64 => Value{ .Number = raw_value },
             bool => Value{ .Bool = raw_value },
             void => Value{.Nil},
+            *Obj => Value{ .Obj = raw_value },
             else => RuntimeError.InvalidOperand,
         };
     }
@@ -164,6 +186,7 @@ pub const Vm = struct {
             .Number => try unpack(a.as(.Number)) == try unpack(b.as(.Number)),
             .Bool => try unpack(a.as(.Bool)) == try unpack(b.as(.Bool)),
             .Nil => true,
+            .Obj => try unpack(Obj.equals(try unpack(a.as(.Obj)), try unpack(b.as(.Obj)))),
         };
     }
 
@@ -172,6 +195,7 @@ pub const Vm = struct {
             .Number => |n| std.debug.print("{}\n", .{n}),
             .Bool => |b| std.debug.print("{}\n", .{b}),
             .Nil => std.debug.print("nil", .{}),
+            .Obj => |o| try o.print(),
         }
     }
 };

@@ -1,4 +1,5 @@
 const std = @import("std");
+const obj = @import("object.zig");
 const Allocator = std.mem.Allocator;
 const ArrayList = std.ArrayList;
 const meta = std.meta;
@@ -12,19 +13,32 @@ pub const ValueTag = enum {
     Number,
     Bool,
     Nil,
+    Obj,
 };
 
 pub const Value = union(ValueTag) {
     Number: f64,
     Bool: bool,
     Nil,
+    Obj: *obj.Obj,
 
     pub fn as(self: Value, comptime tag: ValueTag) ValueError!@FieldType(Value, @tagName(tag)) {
-        if (meta.activeTag(self) != tag) {
+        if (!self.is(tag)) {
             return ValueError.InvalidType;
         }
 
         return @field(self, @tagName(tag));
+    }
+
+    pub fn is(self: Value, comptime tag: ValueTag) bool {
+        return meta.activeTag(self) == tag;
+    }
+
+    pub fn isObjType(self: Value, objType: obj.ObjType) bool {
+        return switch (self) {
+            .Obj => |o| o.type == objType,
+            else => false,
+        };
     }
 };
 

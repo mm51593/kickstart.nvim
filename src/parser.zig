@@ -5,6 +5,7 @@ const OpCode = @import("op_code.zig").OpCode;
 const Scanner = @import("scanner.zig").Scanner;
 const Token = @import("token.zig").Token;
 const Value = @import("value.zig").Value;
+const object = @import("object.zig");
 
 pub const Parser = struct {
     pub const Error = union(enum) {
@@ -120,6 +121,15 @@ pub const Parser = struct {
             .BANG => try self.emitOp(.OP_NOT),
             else => unreachable,
         }
+    }
+
+    fn getStr(self: *Parser) !void {
+        const chars = try self.alloc.alloc(u8, self.previous.lexeme.len - 2);
+        @memcpy(chars, self.previous.lexeme[1..self.previous.lexeme.len - 1]);
+        const obj_str = try object.ObjString.init(self.alloc, chars);
+
+        const val = Value{ .Obj = &obj_str.obj };
+        try self.emitConstant(val);
     }
 
     fn parsePrecendence(self: *Parser, prec: Precedence) !void {
@@ -279,7 +289,7 @@ const ParseRule = struct {
                 .LESS          => rule(null,      p.getBin, .Cmp ),
                 .LESS_EQUAL    => rule(null,      p.getBin, .Cmp ),
                 .IDENTIFIER    => rule(null,      null,     .None),
-                .STRING        => rule(null,      null,     .None),
+                .STRING        => rule(p.getStr,  null,     .None),
                 .NUMBER        => rule(p.getNum,  null,     .None),
                 .AND           => rule(null,      null,     .None),
                 .CLASS         => rule(null,      null,     .None),
